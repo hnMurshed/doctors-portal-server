@@ -20,23 +20,35 @@ const run = async () => {
     const serviceCollection = client.db('doctors_portal').collection('services');
     const bookingsCollection = client.db('doctors_portal').collection('bookings');
     const userCollection = client.db('doctors_portal').collection('users');
+    const doctorCollection = client.db('doctors_portal').collection('doctors');
 
     const verifyToken = (req, res, next) => {
       const authHeader = req.headers.authorization;
       if (!authHeader) {
-        return res.status(401).send({message: 'Unauthorized'});
+        return res.status(401).send({ message: 'Unauthorized' });
       };
 
       const acceesToken = authHeader.split(' ')[1];
-      jwt.verify(acceesToken, process.env.SECRET_ACCESS_TOKEN, function(err, decoded) {
+      jwt.verify(acceesToken, process.env.SECRET_ACCESS_TOKEN, function (err, decoded) {
         if (err) {
-          return res.status(403).send({message: 'Fobidden access'});
+          return res.status(403).send({ message: 'Fobidden access' });
         };
         req.decoded = decoded;
 
         next();
       });
-    }
+    };
+    const verifyAdmin = async (req, res, next) => {
+      const requester = req.decoded.user;
+      const requesterAcount = await userCollection.findOne({ user: requester });
+
+      if (requesterAcount.role === 'admin') {
+        next();
+      }
+      else {
+        res.status(403).send({ message: 'Fobidden' });
+      }
+    };
 
     app.get('/services', async (req, res) => {
       const query = {};
@@ -45,6 +57,12 @@ const run = async () => {
 
       res.send(services);
     });
+
+    // load all services with only name field using mongo Project field method
+    app.get('/service-names', async (req, res) => {
+      const serviceNames = await serviceCollection.find().project({ 'name': 1 }).toArray();
+      res.send(serviceNames);
+    })
 
     app.post('/bookings', async (req, res) => {
       const newBooking = req.body;
@@ -70,7 +88,7 @@ const run = async () => {
         console.log(bookings);
         return res.send(bookings);
       }
-      res.status(403).send({message: 'Forbidden access'})
+      res.status(403).send({ message: 'Forbidden access' })
     })
 
     // get all services with available slots based on date
@@ -110,40 +128,49 @@ const run = async () => {
 
     });
 
-    app.get('/users', verifyToken, async (req, res) => {
+    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
     });
 
-    app.put('/control-role', verifyToken, async (req, res) => {
+    app.put('/control-role', verifyToken, verifyAdmin, async (req, res) => {
       const user = req.body.user;
       const isAdmin = req.body.isAdmin;
-      const requesterEmail = req.decoded.user;
       const filter = { user: user };
       const updateDoc = {
-        $set: { 'role': isAdmin ? 'admin' : 'user'}
+        $set: { 'role': isAdmin ? 'admin' : 'user' }
       };
-      
-      const requester = await userCollection.findOne({user: requesterEmail});
 
-      if (requester.role === 'admin') {
-        const result = await userCollection.updateOne(filter, updateDoc);
-        res.send(result);
-      }
-      else {
-        res.status(403).send({message: 'Only an admin can make or remove admin'})
-      }
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
 
     });
 
     app.get('/admin', async (req, res) => {
       const email = req.headers.email;
-      console.log(email);
-      const user = await userCollection.findOne({user: email});
-      console.log(user);
+      const user = await userCollection.findOne({ user: email });
       const isAdmin = user.role === 'admin';
-      res.send({admin: isAdmin});
+      res.send({ admin: isAdmin });
+    });
+
+    app.get('/doctors', verifyToken, verifyAdmin, async (req, res) => {
+      const doctors = await doctorCollection.find().toArray();
+      res.send(doctors);
     })
+
+    app.post('/doctor', verifyToken, verifyAdmin, async (req, res) => {
+      const newDoctor = req.body;
+      const result = await doctorCollection.insertOne(newDoctor);
+      res.send(result);
+    });
+
+    app.delete('/doctor/:email', verifyToken, verifyAdmin, async (req, res) => {
+      const email = req.params.email;
+      console.log(email);
+      const filter = {email};
+      const result = await doctorCollection.deleteOne(filter);
+      res.send(result);
+    });
   }
   finally {
     // await client.close()
