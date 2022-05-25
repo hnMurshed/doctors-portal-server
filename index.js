@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
 
 const app = express();
@@ -89,6 +89,13 @@ const run = async () => {
         return res.send(bookings);
       }
       res.status(403).send({ message: 'Forbidden access' })
+    });
+
+    app.get('/booking/:id', verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = {_id: ObjectId(id)};
+      const booking = await bookingsCollection.findOne(query);
+      res.send(booking);
     })
 
     // get all services with available slots based on date
